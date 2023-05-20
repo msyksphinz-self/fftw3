@@ -194,8 +194,14 @@ static inline V LD(const R *x, INT ivs, const R *aligned_like)
 {
 	(void)aligned_like; /* UNUSED */
 
-	V xl = TYPEMEM(vls)(x, sizeof(R)*ivs, VL);
-	V xh = TYPEMEM(vls)(x+1, sizeof(R)*ivs, VL);
+	Vuint vidx_offset = TYPEUINT(vid_v)(2*VL);
+	vidx_offset = TYPEUINT(vmul_vx)(vidx_offset, sizeof(R)*ivs, VL);
+
+	V xl = __riscv_vluxei64_v_f64m1(x+0, vidx_offset, VL);
+	V xh = __riscv_vluxei64_v_f64m1(x+1, vidx_offset, VL);
+
+	// V xl = TYPEMEM(vls)(x, sizeof(R)*ivs, VL);
+	// V xh = TYPEMEM(vls)(x+1, sizeof(R)*ivs, VL);
 
 	Vuint idx = TYPEUINT(vid_v)(2*VL); // (0, 1, 2, 3, ...)
 	Vuint idx1 = TYPEUINT(vand_vx)(idx, -2, 2*VL); // (0, 0, 2, 2, ...)
@@ -217,7 +223,8 @@ static inline void ST(R *x, V v, INT ovs, const R *aligned_like)
 {
 	(void)aligned_like; /* UNUSED */
 
-	Vuint idx = TYPEUINT(vid_v)(VL); // (0, 1, 2, 3, ...)
+#ifdef NEVER
+	Vuint idx = TYPEUINT(vid_v)(VL*2); // (0, 1, 2, 3, ...)
 	Vuint idx1 = TYPEUINT(vsll_vx)(idx, 1, VL); // (0, 2, 4, 6, ...)
 
 	V vl = TYPE(vrgather_vv)(v, idx1, VL);
@@ -227,6 +234,17 @@ static inline void ST(R *x, V v, INT ovs, const R *aligned_like)
 
 	V vh = TYPE(vrgather_vv)(v, idx2, VL);
 	TYPEMEM(vss)(x+1, sizeof(R)*ovs, vh, ovs ? VL : 1); // if ovs=0, store the first element
+#endif // NEVER
+
+// #ifdef NEVER
+	Vuint idx = TYPEUINT(vid_v)(VL*2); // (0, 1, 2, 3, ...)
+	Vuint idx_half = TYPEUINT(vsrl_vx)(idx, 1, VL*2); // (0, 0, 1, 1, ...)
+	Vuint vidx_01 = TYPEUINT(vand_vx)(idx, 1, VL*2); // (0, 1, 0, 1, ...)
+	Vuint vidx_offset  = TYPEUINT(vmul_vx)(vidx_01, sizeof(R), VL*2);		// (0, R, 0, R, ...)
+	Vuint vidx_offset2 = TYPEUINT(vmul_vx)(idx_half, sizeof(R)*ovs, VL*2);	// (R*ovs, R*ovs,   R*ovs*1, R*ovs*1,   ...)
+	vidx_offset = TYPEUINT(vadd_vv)(vidx_offset, vidx_offset2, VL*2);		// (R*ovs, R*ovs+R, R*ovs*1, R*ovs*1+R  ...)
+	__riscv_vsuxei64_v_f64m1 (x, vidx_offset, v, ovs ? VL*2 : 2);
+// #endif // NEVER
 }
 
 // only one of STM2 and STN2 should be implemented, according to the hardware. Both micros occur in the code, and the implemented one does some operations, while the no-op one is skipped.
